@@ -1,0 +1,148 @@
+version: "3.9"
+
+# =============================================================================
+# SmartBasket — Basketball Highlight Agent
+# Stack Docker multi-contenedor con soporte GPU (NVIDIA CUDA)
+# =============================================================================
+
+services:
+
+  # ─── Pipeline principal (YOLO + FFmpeg + OpenCV + candidatos) ─────────────
+  pipeline:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.pipeline
+    image: smartbasket-pipeline:latest
+    container_name: smartbasket-pipeline
+    runtime: nvidia
+    volumes:
+      - ./basketball-highlight-agent/videos:/app/videos
+      - ./basketball-highlight-agent/data:/app/data
+      - ./basketball-highlight-agent/models:/app/models
+      - ./basketball-highlight-agent/configs:/app/configs
+      - ./basketball-highlight-agent/src:/app/src
+      - ./basketball-highlight-agent/scripts:/app/scripts
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      - PYTHONPATH=/app/src
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+    env_file:
+      - .env
+    working_dir: /app
+    stdin_open: true
+    tty: true
+    profiles:
+      - pipeline
+      - full
+
+  # ─── VLM Service (Qwen2.5-VL-3B-Instruct) ────────────────────────────────
+  vlm:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.vlm
+    image: smartbasket-vlm:latest
+    container_name: smartbasket-vlm
+    runtime: nvidia
+    volumes:
+      - ./basketball-highlight-agent/videos:/app/videos
+      - ./basketball-highlight-agent/data:/app/data
+      - ./basketball-highlight-agent/models:/app/models
+      - ./basketball-highlight-agent/configs:/app/configs
+      - ./basketball-highlight-agent/src:/app/src
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      - PYTHONPATH=/app/src
+      - TRANSFORMERS_CACHE=/app/models/vlm
+      - HF_HOME=/app/models/vlm
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+    env_file:
+      - .env
+    ports:
+      - "8001:8001"
+    profiles:
+      - vlm
+      - full
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # ─── Reviewer UI (Streamlit) ──────────────────────────────────────────────
+  reviewer:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.reviewer
+    image: smartbasket-reviewer:latest
+    container_name: smartbasket-reviewer
+    volumes:
+      - ./basketball-highlight-agent/videos:/app/videos
+      - ./basketball-highlight-agent/data:/app/data
+      - ./basketball-highlight-agent/models:/app/models
+      - ./basketball-highlight-agent/configs:/app/configs
+      - ./basketball-highlight-agent/src:/app/src
+      # Montar socket Docker y directorio del proyecto para lanzar el pipeline
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/host_project:ro
+    environment:
+      - PYTHONPATH=/app/src
+      - HOST_PROJECT_DIR=${PWD}
+    env_file:
+      - .env
+    ports:
+      - "8501:8501"
+    profiles:
+      - reviewer
+      - full
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─── Nginx Media Server: streaming estático ultrarrápido sin uso de RAM ──
+  media-server:
+    image: nginx:alpine
+    container_name: smartbasket-media
+    volumes:
+      - ./basketball-highlight-agent/videos/clips:/usr/share/nginx/html/clips:ro
+      - ./basketball-highlight-agent/data/history:/usr/share/nginx/html/history:ro
+    ports:
+      - "8082:80"
+    profiles:
+      - reviewer
+      - full
+
+  # ─── Downloader: descarga modelos en el primer setup ─────────────────────
+  downloader:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.pipeline
+    image: smartbasket-pipeline:latest
+    container_name: smartbasket-downloader
+    runtime: nvidia
+    volumes:
+      - ./basketball-highlight-agent/videos:/app/videos
+      - ./basketball-highlight-agent/data:/app/data
+      - ./basketball-highlight-agent/models:/app/models
+      - ./basketball-highlight-agent/configs:/app/configs
+      - ./basketball-highlight-agent/scripts:/app/scripts
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      - PYTHONPATH=/app/src
+      - TRANSFORMERS_CACHE=/app/models/vlm
+      - HF_HOME=/app/models/vlm
+    env_file:
+      - .env
+    command: ["bash", "/app/scripts/download_models.sh"]
+    profiles:
+      - setup
+
+networks:
+  default:
+    name: smartbasket-net

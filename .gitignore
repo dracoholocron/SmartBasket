@@ -1,0 +1,51 @@
+# Archivos generados automáticamente
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Variables de entorno
+.env
+
+# Datos del pipeline (no versionar)
+basketball-highlight-agent/data/frames/
+basketball-highlight-agent/data/audio/
+basketball-highlight-agent/videos/input/
+basketball-highlight-agent/videos/processed/
+basketball-highlight-agent/videos/clips/
+basketball-highlight-agent/videos/reels/
+
+# Modelos (pesados, no versionar)
+basketball-highlight-agent/models/
+
+# Detecciones y candidatos generados (opcionales)
+basketball-highlight-agent/data/detections/
+basketball-highlight-agent/data/candidates/
+basketball-highlight-agent/data/reports/
+basketball-highlight-agent/data/history/
+
+# Anotaciones humanas (se puede versionar si se quiere)
+# basketball-highlight-agent/data/annotations/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Pytest
+.pytest_cache/
+htmlcov/
+.coverage

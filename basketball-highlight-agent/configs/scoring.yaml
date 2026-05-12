@@ -1,0 +1,63 @@
+# =============================================================================
+# SmartBasket — Configuración de scoring de candidatos
+# Ajustar pesos y penalizaciones para mejorar la detección de highlights
+# =============================================================================
+
+weights:
+  # Balón cerca del aro (señal visual más fuerte para canasta)
+  ball_near_hoop: 3.0
+  # Balón con trayectoria ascendente cerca del aro (posible tiro)
+  upward_ball_motion: 2.5
+  # Múltiples jugadores cerca de la zona de pintura
+  players_near_paint: 2.0
+  # Pico de movimiento general en el frame
+  motion_spike: 2.0
+  # Pico de audio (gritos, silbato, reacción del público)
+  audio_peak: 1.5
+  # Cambio de cámara o escena cercano
+  camera_zoom_or_scene_change: 1.0
+  # Posible anotación (heurística: balón sobre el aro + movimiento)
+  possible_score: 3.0
+  # Movimiento tipo celebración (saltos, brazos arriba)
+  celebration_like_motion: 1.5
+  # Aceleración brusca del balón (fast break, robo)
+  ball_acceleration: 1.5
+  # Muchos jugadores en pantalla
+  many_players_visible: 0.5
+
+penalties:
+  # Balón no detectado en ningún frame del segmento
+  no_ball_detected: 0.0
+  # Jugadores no detectados
+  no_players_detected: 0.0
+  # Escena estática (sin movimiento)
+  static_scene: -1.0
+  # Clip muy corto (probablemente ruido)
+  very_short_clip: -0.5
+
+# Tipos de jugada y sus señales características
+play_type_signals:
+  score:
+    - ball_near_hoop
+    - upward_ball_motion
+    - possible_score
+    - audio_peak
+  three_pointer:
+    - ball_near_hoop
+    - upward_ball_motion
+    - possible_score
+  block:
+    - ball_near_hoop
+    - motion_spike
+    - players_near_paint
+  steal:
+    - ball_acceleration
+    - motion_spike
+  fast_break:
+    - ball_acceleration
+    - many_players_visible
+    - motion_spike
+  rebound:
+    - ball_near_hoop
+    - players_near_paint
+    - motion_spike

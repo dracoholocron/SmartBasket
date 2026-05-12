@@ -1,0 +1,70 @@
+# =============================================================================
+# SmartBasket — Configuración principal del pipeline
+# Todos los parámetros se pueden cambiar sin modificar código
+# =============================================================================
+
+video:
+  # FPS para sampling general del partido
+  sample_fps_general: 2
+  # FPS para sampling denso en ventanas candidatas
+  sample_fps_action: 5
+  # Segundos antes del evento a incluir en el clip
+  pre_roll_seconds: 2
+  # Segundos después del evento a incluir en el clip
+  post_roll_seconds: 3
+  # Duración mínima de un clip (segundos)
+  min_clip_seconds: 3
+  # Duración máxima de un clip (segundos)
+  max_clip_seconds: 45
+
+models:
+  # Ruta al modelo YOLO custom para basketball
+  yolo_model_path: "models/yolo/basketball.pt"
+  # Fallback si no existe el modelo custom
+  fallback_yolo_model: "models/yolo/yolov8s.pt"
+  # Modelo VLM para clasificar clips
+  vlm_model: "Qwen/Qwen2.5-VL-3B-Instruct"
+  vlm_model_path: "models/vlm"
+  # Activar/desactivar VLM
+  use_vlm: false
+  # Máximo de clips a procesar con el VLM por corrida
+  vlm_max_clips: 40
+  # Cuantización del VLM (null = sin cuantizar, 4 = 4-bit, 8 = 8-bit)
+  vlm_quantization: null
+
+thresholds:
+  # Score mínimo para considerar un segmento como candidato
+  min_candidate_score: 0.8
+  # Gap máximo (segundos) entre candidatos para fusionarlos
+  merge_gap_seconds: 1.5
+  # Percentil para detección de picos de audio
+  audio_peak_percentile: 90
+  # Percentil para detección de picos de movimiento
+  motion_peak_percentile: 88
+  # Distancia en píxeles para considerar que el balón está cerca del aro
+  ball_hoop_threshold_px: 150
+  # Confidencia mínima para detecciones YOLO
+  yolo_confidence: 0.25
+
+output:
+  # Top K clips a exportar
+  top_k_clips: 20
+  # Top K para el reel final
+  reel_top_k: 10
+  # Exportar en formato vertical (9:16)
+  export_vertical: false
+  # Exportar metadata JSON
+  export_json: true
+  # Exportar metadata CSV
+  export_csv: true
+  # Modo del reel: "score" o "chronological"
+  reel_mode: "score"
+
+ffmpeg:
+  # Usar copia directa (más rápido, puede tener problemas de keyframes)
+  use_stream_copy: true
+  # Codec de re-encode si stream_copy falla
+  video_codec: "libx264"
+  preset: "veryfast"
+  crf: 20
+  audio_codec: "aac"

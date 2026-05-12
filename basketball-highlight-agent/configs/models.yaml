@@ -1,0 +1,33 @@
+court:
+  manual_hoop_regions:
+    enabled: true
+    regions:
+    - name: hoop_1
+      x1: 115
+      x2: 275
+      y1: 296
+      y2: 456
+    - name: hoop_2
+      x1: 2071
+      x2: 2231
+      y1: 236
+      y2: 396
+vlm:
+  device: cuda
+  frame_max_width: 640
+  max_frames_per_clip: 12
+  max_new_tokens: 512
+  service_timeout_seconds: 120
+  temperature: 0.1
+yolo:
+  classes_of_interest:
+    basketball: 0
+    hoop: 1
+    player: 2
+    referee: 3
+  coco_fallback:
+    person: 0
+  conf: 0.25
+  device: cpu
+  imgsz: 640
+  max_det: 50
