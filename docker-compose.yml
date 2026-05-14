@@ -1,8 +1,9 @@
-version: "3.9"
-
 # =============================================================================
-# SmartBasket — Basketball Highlight Agent
+# SmartBasket — Basketball Highlight Agent & Platform
 # Stack Docker multi-contenedor con soporte GPU (NVIDIA CUDA)
+#
+# Nota: Compose v2 no usa la clave top-level `version`; emitía un warning
+# en cada comando y fue removida.
 # =============================================================================
 
 services:
@@ -22,6 +23,7 @@ services:
       - ./basketball-highlight-agent/configs:/app/configs
       - ./basketball-highlight-agent/src:/app/src
       - ./basketball-highlight-agent/scripts:/app/scripts
+      - ./basketball-highlight-agent/tests:/app/tests
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
@@ -32,6 +34,8 @@ services:
     working_dir: /app
     stdin_open: true
     tty: true
+    networks:
+      - smartbasket-net
     profiles:
       - pipeline
       - full
@@ -61,6 +65,8 @@ services:
       - .env
     ports:
       - "8001:8001"
+    networks:
+      - smartbasket-net
     profiles:
       - vlm
       - full
@@ -84,7 +90,6 @@ services:
       - ./basketball-highlight-agent/models:/app/models
       - ./basketball-highlight-agent/configs:/app/configs
       - ./basketball-highlight-agent/src:/app/src
-      # Montar socket Docker y directorio del proyecto para lanzar el pipeline
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/host_project:ro
     environment:
@@ -94,6 +99,8 @@ services:
       - .env
     ports:
       - "8501:8501"
+    networks:
+      - smartbasket-net
     profiles:
       - reviewer
       - full
@@ -113,11 +120,69 @@ services:
       - ./basketball-highlight-agent/data/history:/usr/share/nginx/html/history:ro
     ports:
       - "8082:80"
+    networks:
+      - smartbasket-net
     profiles:
       - reviewer
       - full
 
-  # ─── Downloader: descarga modelos en el primer setup ─────────────────────
+  # ─── Postgres 16 (Phase 2 Database) ──────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: sportsdata-postgres
+    environment:
+      POSTGRES_USER: sportsdata
+      POSTGRES_PASSWORD: sportsdata
+      POSTGRES_DB: sportsdata
+    volumes:
+      - sportsdata_db:/var/lib/postgresql/data
+    networks:
+      - smartbasket-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sportsdata -d sportsdata"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - api
+      - reviewer
+      - full
+
+  # ─── Sports Data API (Phase 2 Backend) ───────────────────────────────────
+  api:
+    build:
+      context: ./sports-data-api
+      dockerfile: Dockerfile
+    image: sports-data-api:latest
+    container_name: sportsdata-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - sports-data-api/.env
+    environment:
+      # DATABASE_URL: rol superuser, lo usa Alembic para correr DDL.
+      DATABASE_URL: postgresql+asyncpg://sportsdata:sportsdata@postgres:5432/sportsdata
+      # APP_DATABASE_URL: rol app_user (no-superuser, sujeto a RLS), lo usa
+      # el runtime de FastAPI. Lo crea la migración b2d4f6a8c0e1.
+      APP_DATABASE_URL: postgresql+asyncpg://app_user:app_user_dev_pwd@postgres:5432/sportsdata
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./sports-data-api/src:/app/src
+      - ./sports-data-api/migrations:/app/migrations
+      - ./sports-data-api/alembic.ini:/app/alembic.ini
+      - ./sports-data-api/scripts:/app/scripts
+    # Hot-reload en dev: uvicorn vigila /app/src y recarga al guardar.
+    command: ["uvicorn", "sports_data_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
+    networks:
+      - smartbasket-net
+    profiles:
+      - api
+      - reviewer
+      - full
+
+  # ─── Downloader ──────────────────────────────────────────────────────────
   downloader:
     build:
       context: .
@@ -140,9 +205,14 @@ services:
     env_file:
       - .env
     command: ["bash", "/app/scripts/download_models.sh"]
+    networks:
+      - smartbasket-net
     profiles:
       - setup
 
 networks:
-  default:
+  smartbasket-net:
     name: smartbasket-net
+
+volumes:
+  sportsdata_db:

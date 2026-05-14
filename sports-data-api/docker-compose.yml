@@ -1,0 +1,58 @@
+# =============================================================================
+# sports-data-api — stack de desarrollo local
+#
+#   postgres : Postgres 16-alpine con pgcrypto + pg_trgm
+#   api      : FastAPI con hot-reload
+#
+# Producción se monta aparte (k8s + RDS), este compose es solo para dev.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sportsdata-postgres
+    environment:
+      POSTGRES_USER: sportsdata
+      POSTGRES_PASSWORD: sportsdata
+      POSTGRES_DB: sportsdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sportsdata -d sportsdata"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sports-data-api:latest
+    container_name: sportsdata-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Override del .env para que apunte al servicio interno
+      DATABASE_URL: postgresql+asyncpg://sportsdata:sportsdata@postgres:5432/sportsdata
+    ports:
+      - "8000:8000"
+    volumes:
+      # Hot reload en dev
+      - ./src:/app/src
+      - ./migrations:/app/migrations
+      - ./tests:/app/tests
+      - ./alembic.ini:/app/alembic.ini
+    command: >
+      uvicorn sports_data_api.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app/src
+
+volumes:
+  postgres_data:
