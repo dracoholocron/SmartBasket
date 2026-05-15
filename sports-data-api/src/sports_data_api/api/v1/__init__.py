@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from sports_data_api.api.v1.api_keys import router as api_keys_router
+from sports_data_api.api.v1.clips import router as clips_router
 from sports_data_api.api.v1.events import router as events_router
 from sports_data_api.api.v1.games import router as games_router
 from sports_data_api.api.v1.pipeline_runs import router as runs_router
@@ -22,3 +23,4 @@ api_v1_router.include_router(players_router)
 api_v1_router.include_router(games_router)
 api_v1_router.include_router(runs_router)
 api_v1_router.include_router(events_router)
+api_v1_router.include_router(clips_router)

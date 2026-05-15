@@ -265,6 +265,74 @@ def main() -> None:
     )
     _ok(code, 401, "revoked key rejected", body)
 
+    # ── S1-A: revisión humana de un evento ────────────────────────────
+    print("\n[17] S1-A: GET eventos del game para tomar uno")
+    code, evs = _request("GET", f"/v1/events?game_id={game['id']}")
+    _ok(code, 200, "GET events by game_id", evs)
+    assert len(evs) >= 1, evs
+    event_id = evs[0]["id"]
+
+    print("\n[18] S1-A: PATCH /v1/events/{id} (review humano)")
+    code, reviewed = _request(
+        "PATCH",
+        f"/v1/events/{event_id}",
+        {
+            "reviewed_by": "smoke-tester",
+            "review_status": "confirmed",
+            "review_notes": "looks good",
+        },
+    )
+    _ok(code, 200, "PATCH event review", reviewed)
+    assert reviewed["review_status"] == "confirmed", reviewed
+
+    print("\n[19] S1-A: GET /v1/events/{id}/tags (auditoría)")
+    code, tags = _request("GET", f"/v1/events/{event_id}/tags")
+    _ok(code, 200, "GET event tags", tags)
+    assert len(tags) == 1, tags
+    assert tags[0]["tagger"] == "smoke-tester", tags
+    assert tags[0]["after_json"]["review_status"] == "confirmed", tags
+
+    print("\n[20] S1-A: POST /v1/events/bulk-review")
+    code, body = _request(
+        "POST",
+        "/v1/events/bulk-review",
+        {
+            "reviewed_by": "smoke-tester",
+            "items": [
+                {"event_id": ev["id"], "review_status": "rejected"}
+                for ev in evs[1:3]
+            ],
+        },
+    )
+    _ok(code, 200, "POST events bulk-review", body)
+    assert body["count"] == len(evs[1:3]), body
+
+    # ── S1-A: registro de clips ───────────────────────────────────────
+    print("\n[21] S1-A: POST /v1/clips (con event_id)")
+    clip_payload = {
+        "game_id": game["id"],
+        "event_id": event_id,
+        "storage_uri": f"/app/videos/clips/{uuid4().hex}.mp4",
+        "duration_seconds": 4.2,
+        "width": 1920,
+        "height": 1080,
+        "fps": 30.0,
+        "format": "mp4",
+    }
+    code, clip = _request("POST", "/v1/clips", clip_payload)
+    _ok(code, 201, "POST clip", clip)
+    clip_id = clip["id"]
+
+    print("\n[22] S1-A: GET /v1/clips/{id}")
+    code, body = _request("GET", f"/v1/clips/{clip_id}")
+    _ok(code, 200, "GET clip", body)
+    assert body["event_id"] == event_id, body
+
+    print("\n[23] S1-A: el evento quedó vinculado al clip (clip_id sincronizado)")
+    code, body = _request("GET", f"/v1/events/{event_id}")
+    _ok(code, 200, "GET event after clip link", body)
+    assert body["clip_id"] == clip_id, body
+
     print("\n>> ALL CHECKS PASSED")
 
 

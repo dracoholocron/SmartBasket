@@ -278,10 +278,16 @@ class EventRead(BaseModel):
     event_type: EventType
     player_id: UUID | None = None
     team_id: UUID | None = None
+    assist_player_id: UUID | None = None
     raw_score: float
     confidence: float
-    review_status: ReviewStatus
     reasons: list[str] = Field(default_factory=list)
+    # Revisión humana (S1-A)
+    review_status: ReviewStatus
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_notes: str | None = None
+    clip_id: UUID | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -325,3 +331,101 @@ class APIKeyCreateResponse(APIKeyRead):
     # El token completo — se muestra SÓLO en la respuesta del POST. Guardalo:
     # no se puede volver a recuperar.
     api_key: str
+
+
+# =============================================================================
+# Event review / tagging (S1-A)
+# =============================================================================
+# El pipeline crea eventos con EventCreate; un revisor humano los corrige con
+# EventReviewUpdate (PATCH) o en lote con BulkEventReview. Cada revisión deja
+# una fila de auditoría en event_tags (EventTagRead).
+
+class EventReviewUpdate(BaseModel):
+    """Payload del PATCH de revisión humana de un evento.
+
+    Todos los campos de revisión son opcionales: lo que no venga, no se toca
+    (se aplica con ``exclude_unset=True``). ``reviewed_by`` es obligatorio —
+    identifica quién hizo la revisión.
+    """
+
+    reviewed_by: str = Field(min_length=1, description="Quién revisa/taggea.")
+    event_type: EventType | None = None
+    player_id: UUID | None = None
+    team_id: UUID | None = None
+    assist_player_id: UUID | None = None
+    review_status: ReviewStatus | None = None
+    review_notes: str | None = None
+    clip_id: UUID | None = None
+
+
+class BulkEventReviewItem(BaseModel):
+    """Una corrección dentro de un BulkEventReview."""
+
+    event_id: UUID
+    event_type: EventType | None = None
+    player_id: UUID | None = None
+    team_id: UUID | None = None
+    assist_player_id: UUID | None = None
+    review_status: ReviewStatus | None = None
+    review_notes: str | None = None
+    clip_id: UUID | None = None
+
+
+class BulkEventReview(BaseModel):
+    """Tagging masivo desde la UI: un revisor, varios eventos, una transacción."""
+
+    reviewed_by: str = Field(min_length=1, description="Quién revisa/taggea.")
+    items: list[BulkEventReviewItem] = Field(min_length=1)
+
+
+class EventTagRead(BaseModel):
+    """Fila de auditoría: el antes/después de una revisión."""
+
+    id: UUID
+    tenant_id: UUID
+    event_id: UUID
+    tagger: str
+    tagged_at: datetime
+    before_json: dict | None = None
+    after_json: dict | None = None
+    notes: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# Clip (S1-A)
+# =============================================================================
+# Un clip es un recorte de video ya subido al storage. La API sólo guarda
+# metadata + el URI; no sirve los bytes (eso lo hace nginx/CDN).
+
+class ClipCreate(BaseModel):
+    game_id: UUID
+    event_id: UUID | None = None
+    storage_uri: str = Field(min_length=1)
+    duration_seconds: float
+    width: int | None = None
+    height: int | None = None
+    fps: float | None = None
+    format: str | None = None
+    size_bytes: int | None = None
+    thumbnail_uri: str | None = None
+    # tenant_id se hereda del game (S0.4-A).
+
+
+class ClipRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    game_id: UUID
+    event_id: UUID | None = None
+    storage_uri: str
+    duration_seconds: float
+    width: int | None = None
+    height: int | None = None
+    fps: float | None = None
+    format: str | None = None
+    size_bytes: int | None = None
+    thumbnail_uri: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
