@@ -1,5 +1,5 @@
 """
-Smoke test end-to-end de S0.3 + S0.4-A.
+Smoke test end-to-end de S0.3 + S0.4-A + S0.4-D.
 
 Reproduce el flujo completo del bridge del pipeline:
     tenant (reuse) -> 2 teams -> season -> game -> pipeline_run -> PATCH
@@ -9,7 +9,13 @@ Validaciones clave:
 * tenant_id NO se acepta en payloads: se inyecta server-side desde
   el header X-Tenant-ID (S0.4-A) o se hereda del Game.
 * Los enums (PipelineStatus, EventType) validan en el borde.
-* S0.4-A: requests sin X-Tenant-ID -> 422; acceso cross-tenant -> 404.
+* S0.4-A: acceso cross-tenant -> 404.
+* S0.4-D: sin credenciales -> 401; mint de API key con root token;
+  auth por Bearer; key revocado -> 401.
+
+Nota: corre con ALLOW_HEADER_TENANT_AUTH=true (default de dev) — por eso
+el header X-Tenant-ID sigue alcanzando para autenticar la mayoría de los
+checks. En prod el único mecanismo válido sería el Bearer token.
 
 Uso (desde C:\\code\\SmartBasket):
     python sports-data-api/scripts/smoke_s03.py
@@ -28,6 +34,8 @@ from uuid import uuid4
 
 BASE = "http://localhost:8000"
 SMOKE_TENANT = "00000000-0000-0000-0000-000000000001"
+# Debe coincidir con API_ROOT_ADMIN_TOKEN del .env de dev.
+ROOT_TOKEN = "change-me-in-dev"
 
 
 def _request(
@@ -35,8 +43,12 @@ def _request(
     path: str,
     body: dict | list | None = None,
     tenant_id: str | None = SMOKE_TENANT,
+    extra_headers: dict[str, str] | None = None,
 ) -> tuple[int, Any]:
-    """Hace una request. Manda X-Tenant-ID salvo que ``tenant_id=None``."""
+    """
+    Hace una request. Manda X-Tenant-ID salvo que ``tenant_id=None``.
+    ``extra_headers`` permite mandar Authorization/X-Root-Admin-Token, etc.
+    """
     url = f"{BASE}{path}"
     data = json.dumps(body).encode() if body is not None else None
     headers: dict[str, str] = {}
@@ -44,6 +56,8 @@ def _request(
         headers["Content-Type"] = "application/json"
     if tenant_id is not None:
         headers["X-Tenant-ID"] = tenant_id
+    if extra_headers:
+        headers.update(extra_headers)
     req = urllib.request.Request(
         url,
         data=data,
@@ -187,16 +201,69 @@ def main() -> None:
     code, body = _request("POST", "/v1/events/bulk", bad_events)
     _ok(code, 422, "POST event invalid event_type rejected", body)
 
-    # ── S0.4-A Negative: request sin X-Tenant-ID ──────────────────────
-    print("\n[11] S0.4-A: GET /v1/games sin X-Tenant-ID -> 422")
+    # ── S0.4-D Negative: request sin credenciales ─────────────────────
+    print("\n[11] S0.4-D: GET /v1/games sin credenciales -> 401")
     code, body = _request("GET", "/v1/games", tenant_id=None)
-    _ok(code, 422, "missing X-Tenant-ID header rejected", body)
+    _ok(code, 401, "missing credentials rejected", body)
 
     # ── S0.4-A Negative: acceso cross-tenant ──────────────────────────
     print("\n[12] S0.4-A: GET game con otro tenant -> 404 (sin leak)")
     other_tenant = str(uuid4())
     code, body = _request("GET", f"/v1/games/{game['id']}", tenant_id=other_tenant)
     _ok(code, 404, "cross-tenant game access returns 404", body)
+
+    # ── S0.4-D: mint de API key con root token ────────────────────────
+    print("\n[13] S0.4-D: POST /v1/admin/api-keys con root token")
+    code, minted = _request(
+        "POST",
+        "/v1/admin/api-keys",
+        {"name": f"smoke-{uuid4().hex[:6]}", "role": "pipeline", "tenant_id": SMOKE_TENANT},
+        tenant_id=None,
+        extra_headers={"X-Root-Admin-Token": ROOT_TOKEN},
+    )
+    _ok(code, 201, "mint API key via root token", minted)
+    api_key = minted["api_key"]
+    key_id = minted["id"]
+    assert api_key.startswith("sdk_"), minted
+    print(f"         minted key prefix: {minted['key_prefix']}")
+
+    # ── S0.4-D: auth por Bearer con el key recién minteado ────────────
+    print("\n[14] S0.4-D: GET /v1/teams con Authorization: Bearer")
+    code, body = _request(
+        "GET",
+        "/v1/teams",
+        tenant_id=None,
+        extra_headers={"Authorization": f"Bearer {api_key}"},
+    )
+    _ok(code, 200, "Bearer auth accepted", body)
+
+    # ── S0.4-D Negative: Bearer inválido ──────────────────────────────
+    print("\n[15] S0.4-D: Bearer token inválido -> 401")
+    code, body = _request(
+        "GET",
+        "/v1/teams",
+        tenant_id=None,
+        extra_headers={"Authorization": "Bearer sdk_not_a_real_key"},
+    )
+    _ok(code, 401, "invalid Bearer token rejected", body)
+
+    # ── S0.4-D: revocar el key, después usarlo -> 401 ─────────────────
+    print("\n[16] S0.4-D: revoke key, luego usarlo -> 401")
+    code, body = _request(
+        "DELETE",
+        f"/v1/admin/api-keys/{key_id}",
+        tenant_id=None,
+        extra_headers={"X-Root-Admin-Token": ROOT_TOKEN},
+    )
+    _ok(code, 200, "revoke API key", body)
+    assert body["revoked_at"] is not None, body
+    code, body = _request(
+        "GET",
+        "/v1/teams",
+        tenant_id=None,
+        extra_headers={"Authorization": f"Bearer {api_key}"},
+    )
+    _ok(code, 401, "revoked key rejected", body)
 
     print("\n>> ALL CHECKS PASSED")
 

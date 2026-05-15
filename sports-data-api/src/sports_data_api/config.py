@@ -49,9 +49,16 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
 
     # ─── Auth ──────────────────────────────────────────────────────────────
-    # Token de root para provisionar tenants (out-of-band).
-    # NO se debe usar para operaciones normales del API.
+    # Token de root para provisionar tenants y mintear el primer API key de
+    # un tenant (out-of-band). NO se debe usar para operaciones normales.
     api_root_admin_token: str = Field(default="change-me-in-dev")
+
+    # Si es true, la API acepta el header ``X-Tenant-ID`` como fallback de
+    # autenticación cuando no viene ``Authorization: Bearer`` (S0.4-D). Es un
+    # atajo SÓLO para dev — el bridge del pipeline y el smoke test lo usan
+    # mientras migran a API keys. En prod debe quedar en false: ahí el único
+    # mecanismo de auth es el Bearer token.
+    allow_header_tenant_auth: bool = Field(default=False)
 
 
 @lru_cache

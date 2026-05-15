@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from sports_data_api.api.v1.api_keys import router as api_keys_router
 from sports_data_api.api.v1.events import router as events_router
 from sports_data_api.api.v1.games import router as games_router
 from sports_data_api.api.v1.pipeline_runs import router as runs_router
@@ -12,7 +13,8 @@ from sports_data_api.api.v1.tenants import router as tenants_router
 
 api_v1_router = APIRouter(prefix="/v1")
 
-# Orden: jerárquico, root → leaves.
+# Orden: admin primero, después jerárquico root → leaves.
+api_v1_router.include_router(api_keys_router)
 api_v1_router.include_router(tenants_router)
 api_v1_router.include_router(seasons_router)
 api_v1_router.include_router(teams_router)

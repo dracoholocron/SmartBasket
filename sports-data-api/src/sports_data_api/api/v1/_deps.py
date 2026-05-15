@@ -1,39 +1,37 @@
 """
 Dependencies compartidas por los routers v1.
 
-`get_current_tenant_id` extrae el header ``X-Tenant-ID`` de la request y lo
-valida como UUID. Si falta, FastAPI/Pydantic devuelven 422 automáticamente
-porque el ``Header(...)`` lo declara como obligatorio.
+`get_current_tenant_id` resuelve el ``tenant_id`` de la request a partir del
+``AuthContext`` (S0.4-D): viene del API key del header ``Authorization:
+Bearer``, o del fallback de dev ``X-Tenant-ID`` si está habilitado. Los
+routers de negocio no necesitan saber de dónde sale — sólo piden el UUID.
 
 `get_tenant_db` abre una session y setea la GUC de Postgres
 ``app.current_tenant_id`` ANTES de devolverla, de modo que las policies de
 Row-Level Security (S0.4-B) filtren automáticamente por tenant. Los routers
 de negocio deben depender de ESTA en vez de ``get_db``.
 
-En S0.4-A el header es el ÚNICO mecanismo de scoping a nivel app; en S0.4-B
-RLS lo respalda a nivel motor. En S0.4-D (Bearer auth) el tenant_id se
-resolverá desde el API key y este header quedará sólo como atajo de dev.
+Evolución: S0.4-A scopeaba por el header X-Tenant-ID; S0.4-B agregó RLS a
+nivel motor; S0.4-D mueve la fuente de verdad del tenant al API key.
 """
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from uuid import UUID
 
-from fastapi import Depends, Header
+from fastapi import Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sports_data_api.api.v1._auth import AuthContext, get_auth_context
 from sports_data_api.db.session import SessionLocal
 
 
 async def get_current_tenant_id(
-    x_tenant_id: UUID = Header(
-        ...,
-        alias="X-Tenant-ID",
-        description="UUID del tenant que está haciendo la request.",
-    ),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> UUID:
-    return x_tenant_id
+    """El tenant_id sale del AuthContext (API key o fallback de dev)."""
+    return auth.tenant_id
 
 
 async def get_tenant_db(

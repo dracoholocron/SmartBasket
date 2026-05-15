@@ -285,3 +285,43 @@ class EventRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# APIKey (S0.4-D)
+# =============================================================================
+# El key crudo se devuelve UNA sola vez, en APIKeyCreateResponse. Después la
+# API sólo expone metadata: nunca el hash ni el token completo.
+
+class APIKeyCreate(BaseModel):
+    name: str = Field(min_length=1, description="Etiqueta legible del key.")
+    role: APIKeyRole
+    expires_at: datetime | None = Field(
+        default=None, description="Si se omite, el key no expira."
+    )
+    # Sólo lo usa el flujo de root token (mintear para cualquier tenant). Con
+    # un admin-key se ignora: el tenant sale del contexto del caller.
+    tenant_id: UUID | None = Field(
+        default=None,
+        description="Tenant destino. Obligatorio con root token; ignorado con admin-key.",
+    )
+
+
+class APIKeyRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    name: str
+    key_prefix: str
+    role: APIKeyRole
+    last_used_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime
+    expires_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class APIKeyCreateResponse(APIKeyRead):
+    # El token completo — se muestra SÓLO en la respuesta del POST. Guardalo:
+    # no se puede volver a recuperar.
+    api_key: str
